@@ -1,4 +1,3 @@
-
 You successfully wrote a reverse proxy using `httputil.ReverseProxy` with a custom `Rewrite` function, added a custom mesh header (`Mesh-Proxy: true`), and routed traffic transparently to a target server.
 
 ---
@@ -44,7 +43,6 @@ Here is how traffic flows through your code execution:
 │  3. Logs: ":8081 : I am Hello World :P"                  │
 │  4. Responds: "Hello World :) from :8081"                │
 └──────────────────────────────────────────────────────────┘
-
 ```
 
 ---
@@ -53,8 +51,6 @@ Here is how traffic flows through your code execution:
 
 1. **Correct Use of `httputil.ProxyRequest.Rewrite`:** You used the modern Go 1.20+ `Rewrite` hook instead of the older `Director` function. This correctly sets both `SetURL` and updates `pr.Out.Host`.
 2. **Multiplexer Isolation:** Creating an isolated `http.NewServeMux()` inside `StartServer()` instead of using `http.HandleFunc` (which uses `http.DefaultServeMux`) prevents route collisions across server instances.
-
-> **Minor Bug Note:** In `main()`, `go serverB.StartServer()` runs in a goroutine, but there is a slight race condition where `serverA` starts immediately. Since `serverA.StartServer()` blocks the main thread, `serverB` usually starts in time, but in production tests, adding a brief delay or synchronization (like `chan` or `sync.WaitGroup`) ensures `serverB` is listening before `serverA` accepts traffic.
 
 ---
 

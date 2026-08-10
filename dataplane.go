@@ -31,6 +31,21 @@ func (sidecar *Sidecar) CreateReverseProxy(targetUrlStr string) (*httputil.Rever
 	return revProxy, nil
 }
 
+func (sidecar *Sidecar) CreateDynamicProxy() *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			serviceName := pr.In.Header.Get("Target-Service")
+
+			targetUrlStr := sidecar.controller.getRouteMapping(serviceName)
+			targetUrl, _ := url.Parse(targetUrlStr)
+
+			pr.Out.Header.Set("Mesh-Proxy", "true")
+			pr.SetURL(targetUrl)
+			pr.Out.Host = targetUrl.Host
+		},
+	}
+}
+
 func (sidecar *Sidecar) StartSidecar(wg *sync.WaitGroup) error {
 	// mark routine as done before starting server
 	if wg != nil {

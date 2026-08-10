@@ -14,4 +14,9 @@ type Sidecar struct {
 	targetUrl  string
 	listenPort string // the port num the proxy server starts on/listens on
 	proxy      *httputil.ReverseProxy
+	controller *ControlPlane
+}
+
+type ControlPlane struct {
+	routes map[string]string
 }
