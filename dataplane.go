@@ -79,18 +79,20 @@ func CreateReverseProxy(targetUrlStr string) *httputil.ReverseProxy {
 }
 
 func main() {
-	serverB := &Server{
+	realApplication := &Server{
 		portNumber: ":8081",
 	}
-	go serverB.StartServer()
+	go realApplication.StartServer()
+	// currently has no waitgroups - will run only until main() executes
 
 	var targetUrlStr string = "http://localhost:8081"
 
-	serverA := &Server{
+	// server A
+	sidecarProxy := &Server{
 		revProxy:   CreateReverseProxy(targetUrlStr),
 		portNumber: ":8080",
 	}
-	err := serverA.StartServer()
+	err := sidecarProxy.StartServer()
 	if err != nil {
 		log.Print(err)
 	}
