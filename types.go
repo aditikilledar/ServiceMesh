@@ -1,8 +1,17 @@
 package main
 
-import "net/http/httputil"
+import (
+	"net/http"
+	"net/http/httputil"
+)
 
-type Server struct {
-	revProxy   *httputil.ReverseProxy
-	portNumber string
+type ApplicationServer struct {
+	listenPort string // the port num the app server starts on/listens on
+	router     *http.ServeMux
+}
+
+type Sidecar struct {
+	targetUrl  string
+	listenPort string // the port num the proxy server starts on/listens on
+	proxy      *httputil.ReverseProxy
 }

@@ -1,68 +1,21 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 )
 
 // DATA PLANE = collection of all the proxies / sidecars working together
 // FOR MVP: Goal: Write a basic HTTP reverse proxy in Go that sits between a client and a target service.
 
-// 1. Create a HTTP server that listens in on a port - 8080
-// 2. Create an endpoint to accept an incoming request and forward it to a hardcoded URL
-func (s *Server) Home(rw http.ResponseWriter, r *http.Request) {
-	// business logic to handle when this endpoint is hit
-	// fmt.Fprintf(rw, "Hello World :)") <--- THIS BREAKS IT BC
-	// Go automatically sets the HTTP status code to 200 OK and sends "Hello World :)" right down the wire to the browser. Once this happens, the HTTP headers are permanently sent and locked AND SO PROXY GETS DAMN CONFUSED
-
-	if s.revProxy != nil {
-		log.Print(s.portNumber, ": Proxying to Hello World :P")
-		s.revProxy.ServeHTTP(rw, r)
-	} else {
-		log.Print(s.portNumber, ": I am Hello World :P")
-		fmt.Fprintf(rw, "Hello World :) from %s", s.portNumber)
-	}
-}
-
-func (s *Server) Info(rw http.ResponseWriter, r *http.Request) {
-	// business logic to handle when this endpoint is hit
-	fmt.Fprintf(rw, "Hi I am reporting something about myself!!!!!")
-	log.Print("In INFO")
-}
-
-func (server *Server) StartServer(handler ...http.Handler) error {
-	var resolvedHandler http.Handler
-	// ... makes it a slice/array
-	if len(handler) > 0 {
-		resolvedHandler = handler[0]
-	} else {
-		// 1. Create an isolated, local multiplexer for this server instance
-		mux := http.NewServeMux()
-
-		// 2. Register routes directly to this local mux instead of the global http package
-		mux.HandleFunc("/", server.Home)
-		mux.HandleFunc("/info", server.Info)
-
-		resolvedHandler = mux
-	}
-
-	log.Print("starting server on port:", server.portNumber)
-
-	err := http.ListenAndServe(server.portNumber, resolvedHandler)
-	if err != nil {
-		log.Print("Error starting server, ", err)
-	}
-
-	return err
-}
-
-func CreateReverseProxy(targetUrlStr string) *httputil.ReverseProxy {
+func (sidecar *Sidecar) CreateReverseProxy(targetUrlStr string) (*httputil.ReverseProxy, error) {
 	targetUrl, err := url.Parse(targetUrlStr)
 	if err != nil {
 		log.Print("bro the targetUrl is invalid")
+		return nil, err
 	}
 
 	// create reverse proxy instance
@@ -75,25 +28,64 @@ func CreateReverseProxy(targetUrlStr string) *httputil.ReverseProxy {
 		pr.Out.Header.Set("Mesh-Proxy", "true")
 	}
 
-	return revProxy
+	return revProxy, nil
+}
+
+func (sidecar *Sidecar) StartSidecar(wg *sync.WaitGroup) error {
+	// mark routine as done before starting server
+	if wg != nil {
+		wg.Done()
+	}
+
+	log.Print("starting Sidecar on port:", sidecar.listenPort)
+
+	// pass proxy as the handler to this server :)
+	err := http.ListenAndServe(sidecar.listenPort, sidecar.proxy)
+	if err != nil {
+		log.Print("Error starting server, ", err)
+	}
+
+	return err
 }
 
 func main() {
-	realApplication := &Server{
-		portNumber: ":8081",
+	var waitgroup sync.WaitGroup
+
+	realApplication := &ApplicationServer{
+		listenPort: ":8081",
 	}
-	go realApplication.StartServer()
+	// tell waitgroup we are waiting for 1 server (application server) to complete initialization
+	waitgroup.Add(1)
+
+	go func() {
+		err := realApplication.StartAppServer(&waitgroup)
+		if err != nil {
+			log.Fatal("Error starting Application on ", realApplication.listenPort, " with error: ", err)
+		}
+	}()
 	// currently has no waitgroups - will run only until main() executes
 
 	var targetUrlStr string = "http://localhost:8081"
 
-	// server A
-	sidecarProxy := &Server{
-		revProxy:   CreateReverseProxy(targetUrlStr),
-		portNumber: ":8080",
+	// Block main thread until AppServer is Done starting
+	waitgroup.Wait()
+	log.Print("Application Server running on ", realApplication.listenPort, ". Now starting our sidecar proxy with a targetUrl: ", targetUrlStr)
+
+	// sidecar proxy runs on main thread and blocks
+	sidecarProxy := &Sidecar{
+		proxy:      nil,
+		listenPort: ":8080",
+		targetUrl:  targetUrlStr,
 	}
-	err := sidecarProxy.StartServer()
+	revProxy, err := sidecarProxy.CreateReverseProxy(sidecarProxy.targetUrl)
 	if err != nil {
-		log.Print(err)
+		log.Fatal("Error creating sidecar proxy to targetUrl: ", targetUrlStr)
+	} else {
+		sidecarProxy.proxy = revProxy
+	}
+	// pass nil waitgroup bc we don't wanna wait for anything while starting this server
+	err = sidecarProxy.StartSidecar(nil)
+	if err != nil {
+		log.Fatal(err)
 	}
 }

@@ -9,3 +9,5 @@ Why use Service Mesh? 2 Reasons: 1 - decouple operational logic from the busines
 Use dependency injection for scalability: for eg: Attach your dependencies to a struct and make `Home` a method on that struct, the (s *Server) part so that Proxy is reachable inside that method
 
  While Proxying, need to pass Original Headers - why? The `httputil.NewSingleHostReverseProxy` in Go does not automatically update the `Host` header of the incoming request. Because of this, your proxy sends your local host header (e.g., `localhost:8080`) to Google. Google sees an unrecognized host and returns a 404 error.
+
+What is a Handler? a **handler** is an object or function that processes incoming HTTP requests and writes the response. **a `ReverseProxy` is a handler**= because it natively implements the Go `http.Handler` interface **pkg.go.dev**
