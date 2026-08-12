@@ -20,3 +20,9 @@ type Sidecar struct {
 type ControlPlane struct {
 	routes map[string]string
 }
+
+// ControlPlaneServer wraps BOTH the gRPC safety net and your custom state
+type ControlPlaneServer struct {
+	pb.UnimplementedControlPlaneServer // Embeds default gRPC behavior
+	cp                                 *ControlPlane
+}
