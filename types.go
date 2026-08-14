@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"net/http/httputil"
+
+	pb "servicemesh/proto"
 )
 
 type ApplicationServer struct {
@@ -23,6 +25,6 @@ type ControlPlane struct {
 
 // ControlPlaneServer wraps BOTH the gRPC safety net and your custom state
 type ControlPlaneServer struct {
-	pb.UnimplementedControlPlaneServer // Embeds default gRPC behavior
-	cp                                 *ControlPlane
+	pb.UnimplementedControlPlaneServiceServer // Embeds default gRPC behavior - needed to cover unimplmented new methods and all that
+	cp                                        *ControlPlane
 }

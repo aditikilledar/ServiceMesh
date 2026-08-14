@@ -6,7 +6,7 @@ package controlplane;
 option go_package = "./proto";
 
 // controlplane service definition
-service ControlPlaneService {
+service ControlPlane {
   // service registration (serviceName -> url mapping)
   rpc RegisterService (RegisterRequest) returns (RegisterResponse);
 

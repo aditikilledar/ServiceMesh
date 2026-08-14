@@ -2,6 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"log"
+	"net"
+
+	pb "servicemesh/proto"
+
+	"google.golang.org/grpc"
 )
 
 func (ctr *ControlPlane) getRouteMapping(serviceName string) string {
@@ -9,7 +16,7 @@ func (ctr *ControlPlane) getRouteMapping(serviceName string) string {
 }
 
 func (ctr *ControlPlane) registerRoute(serviceName string, address string) {
-	ctr.routes[serviceName] := address
+	ctr.routes[serviceName] = address
 }
 
 // gRPC to allow service registration, fetching serviceName from routes
@@ -47,4 +54,20 @@ func (cpServer *ControlPlaneServer) GetRoute(ctx context.Context, req *pb.RouteR
 		Address: "",
 		Success: false,
 	}, nil
+}
+
+func StartControlPlaneServer(port string, cp *ControlPlane) error {
+	listener, err := net.Listen("tcp", port)
+	if err != nil {
+		return fmt.Errorf("failed to listen on port %s", port)
+	}
+	grpcServer := grpc.NewServer()
+	server := &ControlPlaneServer{
+		cp: cp,
+	}
+
+	pb.RegisterControlPlaneServiceServer(grpcServer, server)
+
+	log.Printf("Control Plane gRPC server running on %s", port)
+	return grpcServer.Serve(listener)
 }

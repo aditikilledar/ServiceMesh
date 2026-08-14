@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sync"
+
+	pb "servicemesh/proto"
 )
 
 // DATA PLANE = collection of all the proxies / sidecars working together
@@ -61,6 +65,43 @@ func (sidecar *Sidecar) StartSidecar(wg *sync.WaitGroup) error {
 	}
 
 	return err
+}
+
+func getRouteFromControlPlane(grpcClient pb.ControlPlaneServiceClient, serviceName string) (string, error) {
+	req := &pb.RouteRequest{
+		ServiceName: serviceName,
+	}
+
+	res, err := grpcClient.GetRouting(context.Background(), req)
+	if err != nil {
+		return "", err
+	}
+
+	if !res.GetSuccess() {
+		return "", fmt.Errorf("Route not found for service ", serviceName)
+	}
+
+	return res.GetAddress(), nil
+}
+
+func registerNewServiceWithControlPlane(grpcClient pb.ControlPlaneServiceClient, serviceName string, address string) error {
+	req := &pb.RegisterRequest{
+		ServiceName: serviceName,
+		Address:     address,
+	}
+
+	res, err := grpcClient.RegisterService(context.Background(), req)
+	if err != nil {
+		return err
+	}
+
+	if !res.GetSuccess() {
+		return fmt.Errorf("Could not register route bro sorry")
+	}
+
+	log.Printf("Successfully registered %s:%s", serviceName, address)
+
+	return nil
 }
 
 func main() {
