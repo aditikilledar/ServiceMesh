@@ -59,7 +59,7 @@ func (cpServer *ControlPlaneServer) GetRoute(ctx context.Context, req *pb.RouteR
 func StartControlPlaneServer(port string, cp *ControlPlane) error {
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
-		return fmt.Errorf("failed to listen on port %s", port)
+		return fmt.Errorf("failed to listen on port %s: %w", port, err)
 	}
 	grpcServer := grpc.NewServer()
 	server := &ControlPlaneServer{
@@ -69,5 +69,17 @@ func StartControlPlaneServer(port string, cp *ControlPlane) error {
 	pb.RegisterControlPlaneServiceServer(grpcServer, server)
 
 	log.Printf("Control Plane gRPC server running on %s", port)
-	return grpcServer.Serve(listener)
+
+	if err := grpcServer.Serve(listener); err != nil {
+		fmt.Errorf("gRPC Server failed to serve: %w", err)
+	}
+
+	return nil
+}
+
+// NewControlPlane initializes ControlPlane with an empty, non-nil map
+func NewControlPlane() *ControlPlane {
+	return &ControlPlane{
+		routes: make(map[string]string), // Allocates empty map
+	}
 }

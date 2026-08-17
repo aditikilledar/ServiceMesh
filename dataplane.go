@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"sync"
+	"time"
 
 	pb "servicemesh/proto"
 )
@@ -35,17 +36,37 @@ func (sidecar *Sidecar) CreateReverseProxy(targetUrlStr string) (*httputil.Rever
 	return revProxy, nil
 }
 
+// Modify your Proxy (Data Plane) so that when it receives a request meant for `http://user-service`
+// it queries the Control Plane for the IP/port of `user-service` before forwarding the request.
 func (sidecar *Sidecar) CreateDynamicProxy() *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
+			// Extract service name
 			serviceName := pr.In.Header.Get("Target-Service")
+			if serviceName == "" {
+				serviceName = sidecar.serviceName
+			}
 
-			targetUrlStr := sidecar.controller.getRouteMapping(serviceName)
-			targetUrl, _ := url.Parse(targetUrlStr)
+			// ADD TIMEOUT to Query Control Plane via gRPC
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
 
-			pr.Out.Header.Set("Mesh-Proxy", "true")
+			// Dynamically query Control Plane to get LIVE route for that service
+			targetUrlStr, err := sidecar.getRouteFromControlPlane(ctx)
+			if err != nil {
+				log.Printf("PROXY ERROR; failed to get route for service: %s", serviceName)
+				return
+			}
+
+			targetUrl, err := url.Parse(targetUrlStr)
+			if err != nil {
+				log.Printf("PROXY ERROR; failed to parse route for service: %s", serviceName)
+				return
+			}
+
 			pr.SetURL(targetUrl)
 			pr.Out.Host = targetUrl.Host
+			pr.Out.Header.Set("Mesh-Proxy", "true")
 		},
 	}
 }
@@ -67,30 +88,34 @@ func (sidecar *Sidecar) StartSidecar(wg *sync.WaitGroup) error {
 	return err
 }
 
-func getRouteFromControlPlane(grpcClient pb.ControlPlaneServiceClient, serviceName string) (string, error) {
+func (sidecar *Sidecar) getRouteFromControlPlane(ctx context.Context) (string, error) {
 	req := &pb.RouteRequest{
-		ServiceName: serviceName,
+		ServiceName: sidecar.serviceName,
 	}
 
-	res, err := grpcClient.GetRouting(context.Background(), req)
+	res, err := sidecar.grpcClient.GetRouting(context.Background(), req)
 	if err != nil {
 		return "", err
 	}
 
 	if !res.GetSuccess() {
-		return "", fmt.Errorf("Route not found for service ", serviceName)
+		return "", fmt.Errorf("Route not found for service ", sidecar.serviceName)
 	}
 
 	return res.GetAddress(), nil
 }
 
-func registerNewServiceWithControlPlane(grpcClient pb.ControlPlaneServiceClient, serviceName string, address string) error {
+func (sidecar *Sidecar) RegisterServiceWithControlPlane(ctx context.Context, address string) error {
+	if address == "" {
+		return fmt.Errorf("Cannot register empty address for service %s", sidecar.serviceName)
+	}
+
 	req := &pb.RegisterRequest{
-		ServiceName: serviceName,
+		ServiceName: sidecar.serviceName,
 		Address:     address,
 	}
 
-	res, err := grpcClient.RegisterService(context.Background(), req)
+	res, err := sidecar.grpcClient.RegisterService(context.Background(), req)
 	if err != nil {
 		return err
 	}
@@ -99,49 +124,9 @@ func registerNewServiceWithControlPlane(grpcClient pb.ControlPlaneServiceClient,
 		return fmt.Errorf("Could not register route bro sorry")
 	}
 
-	log.Printf("Successfully registered %s:%s", serviceName, address)
+	log.Printf("Successfully registered %s:%s", sidecar.serviceName, address)
+
+	sidecar.targetUrl = address
 
 	return nil
-}
-
-func main() {
-	var waitgroup sync.WaitGroup
-
-	realApplication := &ApplicationServer{
-		listenPort: ":8081",
-	}
-	// tell waitgroup we are waiting for 1 server (application server) to complete initialization
-	waitgroup.Add(1)
-
-	go func() {
-		err := realApplication.StartAppServer(&waitgroup)
-		if err != nil {
-			log.Fatal("Error starting Application on ", realApplication.listenPort, " with error: ", err)
-		}
-	}()
-	// currently has no waitgroups - will run only until main() executes
-
-	var targetUrlStr string = "http://localhost:8081"
-
-	// Block main thread until AppServer is Done starting
-	waitgroup.Wait()
-	log.Print("Application Server running on ", realApplication.listenPort, ". Now starting our sidecar proxy with a targetUrl: ", targetUrlStr)
-
-	// sidecar proxy runs on main thread and blocks
-	sidecarProxy := &Sidecar{
-		proxy:      nil,
-		listenPort: ":8080",
-		targetUrl:  targetUrlStr,
-	}
-	revProxy, err := sidecarProxy.CreateReverseProxy(sidecarProxy.targetUrl)
-	if err != nil {
-		log.Fatal("Error creating sidecar proxy to targetUrl: ", targetUrlStr)
-	} else {
-		sidecarProxy.proxy = revProxy
-	}
-	// pass nil waitgroup bc we don't wanna wait for anything while starting this server
-	err = sidecarProxy.StartSidecar(nil)
-	if err != nil {
-		log.Fatal(err)
-	}
 }

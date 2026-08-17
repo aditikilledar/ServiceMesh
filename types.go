@@ -13,10 +13,11 @@ type ApplicationServer struct {
 }
 
 type Sidecar struct {
-	targetUrl  string
-	listenPort string // the port num the proxy server starts on/listens on
-	proxy      *httputil.ReverseProxy
-	controller *ControlPlane
+	targetUrl   string
+	listenPort  string // the port num the proxy server starts on/listens on
+	proxy       *httputil.ReverseProxy
+	grpcClient  pb.ControlPlaneServiceClient
+	serviceName string
 }
 
 type ControlPlane struct {
