@@ -3,7 +3,7 @@ syntax = "proto3";
 package controlplane;
 
 // needed to create proto
-option go_package = "./proto";
+option go_package = "./proto;controlplane";
 
 // controlplane service definition
 service ControlPlane {
@@ -12,6 +12,8 @@ service ControlPlane {
 
   // Given a serviceName, returns a target route url
   rpc GetRouting (RouteRequest) returns (RouteResponse);
+
+  rpc StreamRoutes (RouteRequest) returns (stream RouteResponse);
 }
 
 // Field numbers (1, 2, 3) are used for efficient serialization and backward compatibility.
@@ -31,5 +33,6 @@ message RouteRequest {
 
 message RouteResponse {
   bool success = 1;
-  string address = 2;
+  string service_name = 2;
+  repeated string addresses = 3;
 }

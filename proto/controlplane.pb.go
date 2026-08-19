@@ -4,7 +4,7 @@
 // 	protoc        v6.33.4
 // source: proto/controlplane.proto
 
-package proto
+package controlplane
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -173,7 +173,8 @@ func (x *RouteRequest) GetServiceName() string {
 type RouteResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	Address       string                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	ServiceName   string                 `protobuf:"bytes,2,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
+	Addresses     []string               `protobuf:"bytes,3,rep,name=addresses,proto3" json:"addresses,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -215,11 +216,18 @@ func (x *RouteResponse) GetSuccess() bool {
 	return false
 }
 
-func (x *RouteResponse) GetAddress() string {
+func (x *RouteResponse) GetServiceName() string {
 	if x != nil {
-		return x.Address
+		return x.ServiceName
 	}
 	return ""
+}
+
+func (x *RouteResponse) GetAddresses() []string {
+	if x != nil {
+		return x.Addresses
+	}
+	return nil
 }
 
 var File_proto_controlplane_proto protoreflect.FileDescriptor
@@ -234,14 +242,16 @@ const file_proto_controlplane_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"1\n" +
 	"\fRouteRequest\x12!\n" +
-	"\fservice_name\x18\x01 \x01(\tR\vserviceName\"C\n" +
+	"\fservice_name\x18\x01 \x01(\tR\vserviceName\"j\n" +
 	"\rRouteResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\aaddress\x18\x02 \x01(\tR\aaddress2\xae\x01\n" +
-	"\x13ControlPlaneService\x12P\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12!\n" +
+	"\fservice_name\x18\x02 \x01(\tR\vserviceName\x12\x1c\n" +
+	"\taddresses\x18\x03 \x03(\tR\taddresses2\xf2\x01\n" +
+	"\fControlPlane\x12P\n" +
 	"\x0fRegisterService\x12\x1d.controlplane.RegisterRequest\x1a\x1e.controlplane.RegisterResponse\x12E\n" +
 	"\n" +
-	"GetRouting\x12\x1a.controlplane.RouteRequest\x1a\x1b.controlplane.RouteResponseB\tZ\a./protob\x06proto3"
+	"GetRouting\x12\x1a.controlplane.RouteRequest\x1a\x1b.controlplane.RouteResponse\x12I\n" +
+	"\fStreamRoutes\x12\x1a.controlplane.RouteRequest\x1a\x1b.controlplane.RouteResponse0\x01B\x16Z\x14./proto;controlplaneb\x06proto3"
 
 var (
 	file_proto_controlplane_proto_rawDescOnce sync.Once
@@ -263,12 +273,14 @@ var file_proto_controlplane_proto_goTypes = []any{
 	(*RouteResponse)(nil),    // 3: controlplane.RouteResponse
 }
 var file_proto_controlplane_proto_depIdxs = []int32{
-	0, // 0: controlplane.ControlPlaneService.RegisterService:input_type -> controlplane.RegisterRequest
-	2, // 1: controlplane.ControlPlaneService.GetRouting:input_type -> controlplane.RouteRequest
-	1, // 2: controlplane.ControlPlaneService.RegisterService:output_type -> controlplane.RegisterResponse
-	3, // 3: controlplane.ControlPlaneService.GetRouting:output_type -> controlplane.RouteResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	0, // 0: controlplane.ControlPlane.RegisterService:input_type -> controlplane.RegisterRequest
+	2, // 1: controlplane.ControlPlane.GetRouting:input_type -> controlplane.RouteRequest
+	2, // 2: controlplane.ControlPlane.StreamRoutes:input_type -> controlplane.RouteRequest
+	1, // 3: controlplane.ControlPlane.RegisterService:output_type -> controlplane.RegisterResponse
+	3, // 4: controlplane.ControlPlane.GetRouting:output_type -> controlplane.RouteResponse
+	3, // 5: controlplane.ControlPlane.StreamRoutes:output_type -> controlplane.RouteResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name

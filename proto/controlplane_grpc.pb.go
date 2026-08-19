@@ -4,7 +4,7 @@
 // - protoc             v6.33.4
 // source: proto/controlplane.proto
 
-package proto
+package controlplane
 
 import (
 	context "context"
@@ -19,149 +19,191 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ControlPlaneService_RegisterService_FullMethodName = "/controlplane.ControlPlaneService/RegisterService"
-	ControlPlaneService_GetRouting_FullMethodName      = "/controlplane.ControlPlaneService/GetRouting"
+	ControlPlane_RegisterService_FullMethodName = "/controlplane.ControlPlane/RegisterService"
+	ControlPlane_GetRouting_FullMethodName      = "/controlplane.ControlPlane/GetRouting"
+	ControlPlane_StreamRoutes_FullMethodName    = "/controlplane.ControlPlane/StreamRoutes"
 )
 
-// ControlPlaneServiceClient is the client API for ControlPlaneService service.
+// ControlPlaneClient is the client API for ControlPlane service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // controlplane service definition
-type ControlPlaneServiceClient interface {
+type ControlPlaneClient interface {
 	// service registration (serviceName -> url mapping)
 	RegisterService(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
 	// Given a serviceName, returns a target route url
 	GetRouting(ctx context.Context, in *RouteRequest, opts ...grpc.CallOption) (*RouteResponse, error)
+	StreamRoutes(ctx context.Context, in *RouteRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RouteResponse], error)
 }
 
-type controlPlaneServiceClient struct {
+type controlPlaneClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewControlPlaneServiceClient(cc grpc.ClientConnInterface) ControlPlaneServiceClient {
-	return &controlPlaneServiceClient{cc}
+func NewControlPlaneClient(cc grpc.ClientConnInterface) ControlPlaneClient {
+	return &controlPlaneClient{cc}
 }
 
-func (c *controlPlaneServiceClient) RegisterService(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error) {
+func (c *controlPlaneClient) RegisterService(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RegisterResponse)
-	err := c.cc.Invoke(ctx, ControlPlaneService_RegisterService_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ControlPlane_RegisterService_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controlPlaneServiceClient) GetRouting(ctx context.Context, in *RouteRequest, opts ...grpc.CallOption) (*RouteResponse, error) {
+func (c *controlPlaneClient) GetRouting(ctx context.Context, in *RouteRequest, opts ...grpc.CallOption) (*RouteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RouteResponse)
-	err := c.cc.Invoke(ctx, ControlPlaneService_GetRouting_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ControlPlane_GetRouting_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// ControlPlaneServiceServer is the server API for ControlPlaneService service.
-// All implementations must embed UnimplementedControlPlaneServiceServer
+func (c *controlPlaneClient) StreamRoutes(ctx context.Context, in *RouteRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RouteResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ControlPlane_ServiceDesc.Streams[0], ControlPlane_StreamRoutes_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[RouteRequest, RouteResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ControlPlane_StreamRoutesClient = grpc.ServerStreamingClient[RouteResponse]
+
+// ControlPlaneServer is the server API for ControlPlane service.
+// All implementations must embed UnimplementedControlPlaneServer
 // for forward compatibility.
 //
 // controlplane service definition
-type ControlPlaneServiceServer interface {
+type ControlPlaneServer interface {
 	// service registration (serviceName -> url mapping)
 	RegisterService(context.Context, *RegisterRequest) (*RegisterResponse, error)
 	// Given a serviceName, returns a target route url
 	GetRouting(context.Context, *RouteRequest) (*RouteResponse, error)
-	mustEmbedUnimplementedControlPlaneServiceServer()
+	StreamRoutes(*RouteRequest, grpc.ServerStreamingServer[RouteResponse]) error
+	mustEmbedUnimplementedControlPlaneServer()
 }
 
-// UnimplementedControlPlaneServiceServer must be embedded to have
+// UnimplementedControlPlaneServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedControlPlaneServiceServer struct{}
+type UnimplementedControlPlaneServer struct{}
 
-func (UnimplementedControlPlaneServiceServer) RegisterService(context.Context, *RegisterRequest) (*RegisterResponse, error) {
+func (UnimplementedControlPlaneServer) RegisterService(context.Context, *RegisterRequest) (*RegisterResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterService not implemented")
 }
-func (UnimplementedControlPlaneServiceServer) GetRouting(context.Context, *RouteRequest) (*RouteResponse, error) {
+func (UnimplementedControlPlaneServer) GetRouting(context.Context, *RouteRequest) (*RouteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRouting not implemented")
 }
-func (UnimplementedControlPlaneServiceServer) mustEmbedUnimplementedControlPlaneServiceServer() {}
-func (UnimplementedControlPlaneServiceServer) testEmbeddedByValue()                             {}
+func (UnimplementedControlPlaneServer) StreamRoutes(*RouteRequest, grpc.ServerStreamingServer[RouteResponse]) error {
+	return status.Error(codes.Unimplemented, "method StreamRoutes not implemented")
+}
+func (UnimplementedControlPlaneServer) mustEmbedUnimplementedControlPlaneServer() {}
+func (UnimplementedControlPlaneServer) testEmbeddedByValue()                      {}
 
-// UnsafeControlPlaneServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to ControlPlaneServiceServer will
+// UnsafeControlPlaneServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ControlPlaneServer will
 // result in compilation errors.
-type UnsafeControlPlaneServiceServer interface {
-	mustEmbedUnimplementedControlPlaneServiceServer()
+type UnsafeControlPlaneServer interface {
+	mustEmbedUnimplementedControlPlaneServer()
 }
 
-func RegisterControlPlaneServiceServer(s grpc.ServiceRegistrar, srv ControlPlaneServiceServer) {
-	// If the following call panics, it indicates UnimplementedControlPlaneServiceServer was
+func RegisterControlPlaneServer(s grpc.ServiceRegistrar, srv ControlPlaneServer) {
+	// If the following call panics, it indicates UnimplementedControlPlaneServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&ControlPlaneService_ServiceDesc, srv)
+	s.RegisterService(&ControlPlane_ServiceDesc, srv)
 }
 
-func _ControlPlaneService_RegisterService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ControlPlane_RegisterService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RegisterRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControlPlaneServiceServer).RegisterService(ctx, in)
+		return srv.(ControlPlaneServer).RegisterService(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ControlPlaneService_RegisterService_FullMethodName,
+		FullMethod: ControlPlane_RegisterService_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControlPlaneServiceServer).RegisterService(ctx, req.(*RegisterRequest))
+		return srv.(ControlPlaneServer).RegisterService(ctx, req.(*RegisterRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControlPlaneService_GetRouting_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ControlPlane_GetRouting_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RouteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControlPlaneServiceServer).GetRouting(ctx, in)
+		return srv.(ControlPlaneServer).GetRouting(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ControlPlaneService_GetRouting_FullMethodName,
+		FullMethod: ControlPlane_GetRouting_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControlPlaneServiceServer).GetRouting(ctx, req.(*RouteRequest))
+		return srv.(ControlPlaneServer).GetRouting(ctx, req.(*RouteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// ControlPlaneService_ServiceDesc is the grpc.ServiceDesc for ControlPlaneService service.
+func _ControlPlane_StreamRoutes_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(RouteRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ControlPlaneServer).StreamRoutes(m, &grpc.GenericServerStream[RouteRequest, RouteResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ControlPlane_StreamRoutesServer = grpc.ServerStreamingServer[RouteResponse]
+
+// ControlPlane_ServiceDesc is the grpc.ServiceDesc for ControlPlane service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var ControlPlaneService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "controlplane.ControlPlaneService",
-	HandlerType: (*ControlPlaneServiceServer)(nil),
+var ControlPlane_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "controlplane.ControlPlane",
+	HandlerType: (*ControlPlaneServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "RegisterService",
-			Handler:    _ControlPlaneService_RegisterService_Handler,
+			Handler:    _ControlPlane_RegisterService_Handler,
 		},
 		{
 			MethodName: "GetRouting",
-			Handler:    _ControlPlaneService_GetRouting_Handler,
+			Handler:    _ControlPlane_GetRouting_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamRoutes",
+			Handler:       _ControlPlane_StreamRoutes_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "proto/controlplane.proto",
 }

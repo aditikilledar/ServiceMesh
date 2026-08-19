@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -15,6 +16,83 @@ import (
 
 // DATA PLANE = collection of all the proxies / sidecars working together
 // FOR MVP: Goal: Write a basic HTTP reverse proxy in Go that sits between a client and a target service.
+
+func NewSidecar(serviceName string, listenPort string, client pb.ControlPlaneServiceClient) (sidecar *Sidecar) {
+	sidecar = &Sidecar{
+		serviceName: serviceName,
+		listenPort:  listenPort,
+		grpcClient:  client,
+		endpoints:   make(map[string][]string),
+		lbIndices:   make(map[string]*uint64),
+	}
+	sidecar.proxy = sidecar.CreateDynamicProxy()
+	return sidecar
+}
+
+// -------------------------------------------------------------------------
+// V2: StartRouteStream opens a long-lived gRPC server-stream to the Control
+// Plane. It continuously receives pushed endpoint updates and updates local cache.
+// -------------------------------------------------------------------------
+func (s *Sidecar) StartRouteStream(ctx context.Context, targetService string) {
+	// 1. Open long lived gRPC server stream
+	stream, err := s.grpcClient.StreamRoutes(ctx, &pb.RouteRequest{
+		ServiceName: targetService,
+	})
+	if err != nil {
+		log.Printf("Failed to open route stream for %s:%v", targetService, err)
+		return
+	}
+
+	// 2. Consume pushed events onto the stream in a dedicated goroutine
+	go func() {
+		for {
+			// block until control plane pushes something onto the stream
+			res, err := stream.Recv()
+			if err == io.EOF {
+				log.Printf("Route stream closed by Control Plane for %s", targetService)
+				return
+			}
+			if err != nil {
+				log.Printf("Error reading route stream for %s: %v", targetService, err)
+				return
+			}
+
+			// 3. Update LOCAL CACHE with newly recieved address/endpoint list from control plane
+			if res.GetSuccess() {
+				s.updateLocalCache(targetService, res.GetAddresses())
+			}
+		}
+	}()
+}
+
+// -------------------------------------------------------------------------
+// V2: updateLocalCache updates the in-memory endpoint slice and ensures
+// a Round-Robin atomic counter exists for the given service.
+// -------------------------------------------------------------------------
+func (s *Sidecar) updateLocalCache(targetService string, addresses []string) {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+
+	s.endpoints[targetService] = addresses
+
+	// if no counter exists for this service, allocate a new atomic counter
+	if _, exists := s.lbIndices[targetService]; !exists {
+		var idx uint64 = 0
+		s.lbIndices[targetService] = &idx
+	}
+	log.Printf("[DATA PLANE SIDECAR CACHE UPDATED] Service: %s -> Instances: %v", targetService, addresses)
+}
+
+// TODO:
+// -------------------------------------------------------------------------
+// V2: getNextEndpointLocal fetches an endpoint from local memory using
+// atomic Round-Robin modulo arithmetic. Executed in nanoseconds!
+// -------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------
+// V2 CHANGED: CreateDynamicProxy now routes traffic via local memory cache
+// rather than issuing a network call to the Control Plane per request.
+// -------------------------------------------------------------------------
 
 func (sidecar *Sidecar) CreateReverseProxy(targetUrlStr string) (*httputil.ReverseProxy, error) {
 	targetUrl, err := url.Parse(targetUrlStr)
