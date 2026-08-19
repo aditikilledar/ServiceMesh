@@ -39,7 +39,7 @@ func (cpServer *ControlPlaneServer) RegisterService(ctx context.Context, req *pb
 }
 
 // Get Route gRPC
-func (cpServer *ControlPlaneServer) GetRoute(ctx context.Context, req *pb.RouteRequest) (*pb.RouteResponse, error) {
+func (cpServer *ControlPlaneServer) GetRouting(ctx context.Context, req *pb.RouteRequest) (*pb.RouteResponse, error) {
 	if req.GetServiceName() != "" {
 		address := cpServer.cp.getRouteMapping(req.GetServiceName())
 		if address != "" {
@@ -66,6 +66,7 @@ func StartControlPlaneServer(port string, cp *ControlPlane) error {
 		cp: cp,
 	}
 
+	// this means we agree to implement the interfaces defined in proto files in this handler
 	pb.RegisterControlPlaneServiceServer(grpcServer, server)
 
 	log.Printf("Control Plane gRPC server running on %s", port)

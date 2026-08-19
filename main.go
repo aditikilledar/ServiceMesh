@@ -59,8 +59,6 @@ func main() {
 		listenPort:  ":8080",
 		grpcClient:  grpcClient,
 	}
-	sidecarProxy.proxy = sidecarProxy.CreateDynamicProxy()
-
 	// Sidecar registers the service with Control Plane
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -68,6 +66,8 @@ func main() {
 	if err := sidecarProxy.RegisterServiceWithControlPlane(ctx, sidecarProxy.targetUrl); err != nil {
 		log.Fatalf("Failed to register sidecar: %v", err)
 	}
+
+	sidecarProxy.proxy = sidecarProxy.CreateDynamicProxy()
 
 	// pass nil waitgroup bc we don't wanna wait for anything while starting this server
 	err = sidecarProxy.StartSidecar(nil)

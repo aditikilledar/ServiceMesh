@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httputil"
+	"sync"
 
 	pb "servicemesh/proto"
 )
@@ -22,6 +23,7 @@ type Sidecar struct {
 
 type ControlPlane struct {
 	routes map[string]string
+	mu     sync.RWMutex
 }
 
 // ControlPlaneServer wraps BOTH the gRPC safety net and your custom state

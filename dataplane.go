@@ -68,6 +68,10 @@ func (sidecar *Sidecar) CreateDynamicProxy() *httputil.ReverseProxy {
 			pr.Out.Host = targetUrl.Host
 			pr.Out.Header.Set("Mesh-Proxy", "true")
 		},
+		// ✅ Intercepts failures when pr.SetURL was never called
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			http.Error(w, fmt.Sprintf("Service Mesh Proxy Error: %v", err), http.StatusBadGateway)
+		},
 	}
 }
 
@@ -93,7 +97,7 @@ func (sidecar *Sidecar) getRouteFromControlPlane(ctx context.Context) (string, e
 		ServiceName: sidecar.serviceName,
 	}
 
-	res, err := sidecar.grpcClient.GetRouting(context.Background(), req)
+	res, err := sidecar.grpcClient.GetRouting(ctx, req)
 	if err != nil {
 		return "", err
 	}
