@@ -11,11 +11,24 @@ import (
 	"google.golang.org/grpc"
 )
 
+// NewControlPlane initializes ControlPlane with an empty, non-nil map
+func NewControlPlane() *ControlPlane {
+	return &ControlPlane{
+		routes: make(map[string]string), // Allocates empty map
+	}
+}
+
 func (ctr *ControlPlane) getRouteMapping(serviceName string) string {
+	ctr.mu.RLock()         // allow concurrent reads
+	defer ctr.mu.RUnlock() // release lock while exiting the function
+
 	return ctr.routes[serviceName]
 }
 
 func (ctr *ControlPlane) registerRoute(serviceName string, address string) {
+	ctr.mu.Lock()
+	defer ctr.mu.Unlock()
+
 	ctr.routes[serviceName] = address
 }
 
@@ -76,11 +89,4 @@ func StartControlPlaneServer(port string, cp *ControlPlane) error {
 	}
 
 	return nil
-}
-
-// NewControlPlane initializes ControlPlane with an empty, non-nil map
-func NewControlPlane() *ControlPlane {
-	return &ControlPlane{
-		routes: make(map[string]string), // Allocates empty map
-	}
 }
