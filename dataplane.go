@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pb "servicemesh/proto"
@@ -17,7 +18,7 @@ import (
 // DATA PLANE = collection of all the proxies / sidecars working together
 // FOR MVP: Goal: Write a basic HTTP reverse proxy in Go that sits between a client and a target service.
 
-func NewSidecar(serviceName string, listenPort string, client pb.ControlPlaneServiceClient) (sidecar *Sidecar) {
+func NewSidecar(serviceName string, listenPort string, client pb.ControlPlaneClient) (sidecar *Sidecar) {
 	sidecar = &Sidecar{
 		serviceName: serviceName,
 		listenPort:  listenPort,
@@ -88,11 +89,25 @@ func (s *Sidecar) updateLocalCache(targetService string, addresses []string) {
 // V2: getNextEndpointLocal fetches an endpoint from local memory using
 // atomic Round-Robin modulo arithmetic. Executed in nanoseconds!
 // -------------------------------------------------------------------------
+func (s *Sidecar) getNextEndpointFromLocal(serviceName string) (string, bool) {
+	s.cacheMu.RLock()
+	defer s.cacheMu.Unlock()
+	addresses, exists := s.endpoints[serviceName]
+	indexPtr := s.lbIndices[serviceName]
 
-// -------------------------------------------------------------------------
-// V2 CHANGED: CreateDynamicProxy now routes traffic via local memory cache
-// rather than issuing a network call to the Control Plane per request.
-// -------------------------------------------------------------------------
+	// returm false if no endpoints are cached yet
+	if !exists || len(addresses) == 0 {
+		return "", false
+	}
+
+	// lock free atomic increment across concurrent requests
+	nextIndex := atomic.AddUint64(indexPtr, 1)
+
+	// pick target backend using modulo Round Robin Arithmetic
+	// subtract 1 to adjust for 0-indexing
+	index := (nextIndex - 1) % uint64(len(addresses))
+	return addresses[index], true
+}
 
 func (sidecar *Sidecar) CreateReverseProxy(targetUrlStr string) (*httputil.ReverseProxy, error) {
 	targetUrl, err := url.Parse(targetUrlStr)
@@ -114,6 +129,12 @@ func (sidecar *Sidecar) CreateReverseProxy(targetUrlStr string) (*httputil.Rever
 	return revProxy, nil
 }
 
+
+// -------------------------------------------------------------------------
+// V2 CHANGED: CreateDynamicProxy now routes traffic via local memory cache
+// rather than issuing a network call to the Control Plane per request.
+// -------------------------------------------------------------------------
+
 // Modify your Proxy (Data Plane) so that when it receives a request meant for `http://user-service`
 // it queries the Control Plane for the IP/port of `user-service` before forwarding the request.
 func (sidecar *Sidecar) CreateDynamicProxy() *httputil.ReverseProxy {
@@ -125,17 +146,34 @@ func (sidecar *Sidecar) CreateDynamicProxy() *httputil.ReverseProxy {
 				serviceName = sidecar.serviceName
 			}
 
-			// ADD TIMEOUT to Query Control Plane via gRPC
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
+			var found bool
+			var targetUrlStr string
 
-			// Dynamically query Control Plane to get LIVE route for that service
-			targetUrlStr, err := sidecar.getRouteFromControlPlane(ctx)
-			if err != nil {
-				log.Printf("PROXY ERROR; failed to get route for service: %s", serviceName)
-				return
+			// 1. FAST PATH: use local sidecar cache to get route for a service
+			targetUrlStr, found = sidecar.getNextEndpointFromLocal(serviceName)
+			
+			if !found {
+				// 2. SLOW PATH IF CACHE MISS: Route NOT FOUND - gRPC call to get route from control plane, then update local cache
+				log.Printf("CACHE MISS: Fetching route from Control Plane for service: %s", serviceName)
+
+				// ADD TIMEOUT to Query Control Plane via gRPC
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+
+				// Dynamically query Control Plane to get LIVE route for that service
+				targetUrlStr, err := sidecar.getRouteFromControlPlane(ctx)
+				if err != nil {
+					log.Printf("PROXY ERROR; failed to get route for service: %s", serviceName)
+					return // Triggers ErrorHandler
+				}
+
+				// 3. UPDATE CACHE in the background, since it was miss before - no addresses in it; add targetUrlStr slice to it
+				go func(serviceName string, addresses []string) {
+					sidecar.updateLocalCache(serviceName, addresses)
+				} (serviceName, []string{targetUrlStr})
 			}
 
+			// 4. actually route the request
 			targetUrl, err := url.Parse(targetUrlStr)
 			if err != nil {
 				log.Printf("PROXY ERROR; failed to parse route for service: %s", serviceName)
@@ -170,7 +208,7 @@ func (sidecar *Sidecar) StartSidecar(wg *sync.WaitGroup) error {
 	return err
 }
 
-func (sidecar *Sidecar) getRouteFromControlPlane(ctx context.Context) (string, error) {
+func (sidecar *Sidecar) getRouteFromControlPlane(ctx context.Context) (string[], error) {
 	req := &pb.RouteRequest{
 		ServiceName: sidecar.serviceName,
 	}
@@ -184,7 +222,7 @@ func (sidecar *Sidecar) getRouteFromControlPlane(ctx context.Context) (string, e
 		return "", fmt.Errorf("Route not found for service ", sidecar.serviceName)
 	}
 
-	return res.GetAddress(), nil
+	return res.GetAddresses(), nil
 }
 
 func (sidecar *Sidecar) RegisterServiceWithControlPlane(ctx context.Context, address string) error {
