@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"log"
-	pb "servicemesh/proto"
+	"net"
 	"sync"
 	"time"
+
+	pb "servicemesh/proto"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -16,62 +18,67 @@ func main() {
 
 	cp := NewControlPlane()
 
-	// 2. Start Control Plane gRPC Server in a background goroutine
+	// 1. Start Control Plane gRPC Server
 	go func() {
 		if err := StartControlPlaneServer(":50051", cp); err != nil {
 			log.Fatalf("Control Plane gRPC server failed: %v", err)
 		}
 	}()
 
-	// Connect gRPC client to control plane
-	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	waitForPort("127.0.0.1:50051", 3*time.Second)
+
+	// 2. Connect gRPC Client
+	conn, err := grpc.NewClient("127.0.0.1:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Could not connect to control plane: %v", err)
 	}
 	defer conn.Close()
-	grpcClient := pb.NewControlPlaneServiceClient(conn)
+	grpcClient := pb.NewControlPlaneClient(conn)
 
+	// 3. Start Backend App Server
 	realApplication := &ApplicationServer{
 		listenPort: "127.0.0.1:8081",
 	}
-	// tell waitgroup we are waiting for 1 server (application server) to complete initialization
 	waitgroup.Add(1)
 
 	go func() {
-		err := realApplication.StartAppServer(&waitgroup)
-		if err != nil {
-			log.Fatal("Error starting Application on ", realApplication.listenPort, " with error: ", err)
+		if err := realApplication.StartAppServer(&waitgroup); err != nil {
+			log.Fatal("Error starting Application: ", err)
 		}
 	}()
-	// currently has no waitgroups - will run only until main() executes
 
-	var targetUrlStr string = "http://localhost:8081"
-
-	// Block main thread until AppServer is Done starting
 	waitgroup.Wait()
-	log.Print("Application Server running on ", realApplication.listenPort, ". Now starting our sidecar proxy with a targetUrl: ", targetUrlStr)
+	log.Printf("Application Server running on %s. Starting Sidecar Proxy...", realApplication.listenPort)
 
-	// sidecar proxy runs on main thread and blocks
-	sidecarProxy := &Sidecar{
-		serviceName: "user-service",
-		targetUrl:   "http://localhost:8081",
-		proxy:       nil,
-		listenPort:  ":8080",
-		grpcClient:  grpcClient,
-	}
-	// Sidecar registers the service with Control Plane
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 4. Initialize Sidecar
+	sidecarProxy := NewSidecar("user-service", ":8080", grpcClient)
+
+	// 5. Register with Control Plane FIRST
+	ctxRegistration, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := sidecarProxy.RegisterServiceWithControlPlane(ctx, sidecarProxy.targetUrl); err != nil {
+	if err := sidecarProxy.RegisterServiceWithControlPlane(ctxRegistration, realApplication.URL()); err != nil {
 		log.Fatalf("Failed to register sidecar: %v", err)
 	}
 
-	sidecarProxy.proxy = sidecarProxy.CreateDynamicProxy()
+	// 6. Start Streaming SECOND (so initial snapshot receives the registered route)
+	ctxStream := context.Background()
+	sidecarProxy.StartRouteStream(ctxStream, sidecarProxy.serviceName)
 
-	// pass nil waitgroup bc we don't wanna wait for anything while starting this server
-	err = sidecarProxy.StartSidecar(nil)
-	if err != nil {
+	// 7. Start HTTP Proxy (blocking), nil waitgroup because we don't want to wait for anything while starting this server
+	if err := sidecarProxy.StartSidecar(nil); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func waitForPort(addr string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

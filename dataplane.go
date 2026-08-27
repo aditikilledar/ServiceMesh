@@ -18,8 +18,8 @@ import (
 // DATA PLANE = collection of all the proxies / sidecars working together
 // FOR MVP: Goal: Write a basic HTTP reverse proxy in Go that sits between a client and a target service.
 
-func NewSidecar(serviceName string, listenPort string, client pb.ControlPlaneClient) (sidecar *Sidecar) {
-	sidecar = &Sidecar{
+func NewSidecar(serviceName string, listenPort string, client pb.ControlPlaneClient) *Sidecar {
+	sidecar := &Sidecar{
 		serviceName: serviceName,
 		listenPort:  listenPort,
 		grpcClient:  client,
@@ -91,7 +91,7 @@ func (s *Sidecar) updateLocalCache(targetService string, addresses []string) {
 // -------------------------------------------------------------------------
 func (s *Sidecar) getNextEndpointFromLocal(serviceName string) (string, bool) {
 	s.cacheMu.RLock()
-	defer s.cacheMu.Unlock()
+	defer s.cacheMu.RUnlock()
 	addresses, exists := s.endpoints[serviceName]
 	indexPtr := s.lbIndices[serviceName]
 
@@ -108,27 +108,6 @@ func (s *Sidecar) getNextEndpointFromLocal(serviceName string) (string, bool) {
 	index := (nextIndex - 1) % uint64(len(addresses))
 	return addresses[index], true
 }
-
-func (sidecar *Sidecar) CreateReverseProxy(targetUrlStr string) (*httputil.ReverseProxy, error) {
-	targetUrl, err := url.Parse(targetUrlStr)
-	if err != nil {
-		log.Print("bro the targetUrl is invalid")
-		return nil, err
-	}
-
-	// create reverse proxy instance
-	revProxy := &httputil.ReverseProxy{}
-
-	// need to retain query path and logic; else it will throw unrecognized if it's still localhost
-	revProxy.Rewrite = func(pr *httputil.ProxyRequest) {
-		pr.SetURL(targetUrl)         // Configures Scheme, Host, and Path routing
-		pr.Out.Host = targetUrl.Host // updates outgoing Host header
-		pr.Out.Header.Set("Mesh-Proxy", "true")
-	}
-
-	return revProxy, nil
-}
-
 
 // -------------------------------------------------------------------------
 // V2 CHANGED: CreateDynamicProxy now routes traffic via local memory cache
@@ -151,26 +130,25 @@ func (sidecar *Sidecar) CreateDynamicProxy() *httputil.ReverseProxy {
 
 			// 1. FAST PATH: use local sidecar cache to get route for a service
 			targetUrlStr, found = sidecar.getNextEndpointFromLocal(serviceName)
-			
+
 			if !found {
 				// 2. SLOW PATH IF CACHE MISS: Route NOT FOUND - gRPC call to get route from control plane, then update local cache
 				log.Printf("CACHE MISS: Fetching route from Control Plane for service: %s", serviceName)
 
 				// ADD TIMEOUT to Query Control Plane via gRPC
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				ctx, cancel := context.WithTimeout(pr.In.Context(), 2*time.Second)
 				defer cancel()
 
 				// Dynamically query Control Plane to get LIVE route for that service
-				targetUrlStr, err := sidecar.getRouteFromControlPlane(ctx)
-				if err != nil {
+				fetchedAddresses, err := sidecar.getRoutesFromControlPlane(ctx, serviceName)
+				if err != nil || len(fetchedAddresses) == 0 {
 					log.Printf("PROXY ERROR; failed to get route for service: %s", serviceName)
 					return // Triggers ErrorHandler
 				}
 
 				// 3. UPDATE CACHE in the background, since it was miss before - no addresses in it; add targetUrlStr slice to it
-				go func(serviceName string, addresses []string) {
-					sidecar.updateLocalCache(serviceName, addresses)
-				} (serviceName, []string{targetUrlStr})
+				sidecar.updateLocalCache(serviceName, fetchedAddresses)
+				targetUrlStr = fetchedAddresses[0]
 			}
 
 			// 4. actually route the request
@@ -208,18 +186,21 @@ func (sidecar *Sidecar) StartSidecar(wg *sync.WaitGroup) error {
 	return err
 }
 
-func (sidecar *Sidecar) getRouteFromControlPlane(ctx context.Context) (string[], error) {
+func (sidecar *Sidecar) getRoutesFromControlPlane(ctx context.Context, serviceName string) ([]string, error) {
+	if serviceName == "" {
+		serviceName = sidecar.serviceName
+	}
 	req := &pb.RouteRequest{
-		ServiceName: sidecar.serviceName,
+		ServiceName: serviceName,
 	}
 
 	res, err := sidecar.grpcClient.GetRouting(ctx, req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if !res.GetSuccess() {
-		return "", fmt.Errorf("Route not found for service ", sidecar.serviceName)
+		return nil, fmt.Errorf("Route not found for service: %s", sidecar.serviceName)
 	}
 
 	return res.GetAddresses(), nil
@@ -245,8 +226,6 @@ func (sidecar *Sidecar) RegisterServiceWithControlPlane(ctx context.Context, add
 	}
 
 	log.Printf("Successfully registered %s:%s", sidecar.serviceName, address)
-
-	sidecar.targetUrl = address
 
 	return nil
 }

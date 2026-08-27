@@ -14,6 +14,10 @@ func (s *ApplicationServer) Home(rw http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(rw, "Hello World :P \n from %s", s.listenPort)
 }
 
+func (app *ApplicationServer) URL() string {
+	return fmt.Sprintf("http://%s", app.listenPort)
+}
+
 func (s *ApplicationServer) Info(rw http.ResponseWriter, r *http.Request) {
 	// business logic to handle when this endpoint is hit
 	fmt.Fprintf(rw, "Hi I am reporting something about myself!!!!!")

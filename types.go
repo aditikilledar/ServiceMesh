@@ -26,8 +26,9 @@ type Sidecar struct {
 }
 
 type ControlPlane struct {
-	routes map[string]string
-	mu     sync.RWMutex
+	routes      map[string][]string        // stores slice of routes
+	subscribers map[string][]chan []string // pubsub: maps a serviceName -> actively streaming channels with datatype []string
+	mu          sync.RWMutex
 }
 
 // ControlPlaneServer wraps BOTH the gRPC safety net and your custom state
