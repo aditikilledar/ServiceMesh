@@ -20,20 +20,24 @@ Check out a detailed overview of each of the building blocks [here](BUILDINGBLOC
 ## 🧱 Component Breakdown
 
 ```
-                  +-----------------------------+
-                  |   Control Plane (gRPC)      |
-                  |         :50051              |
-                  +--------------+--------------+
-                                 |
-              gRPC Registration  |  gRPC Route Streaming
-             & Route Lookups     |  (Push Updates)
-                                 v
-+----------------+       +-------+-------+       +-------------------+
-|  Client /      | HTTP  | Data Plane    | HTTP  | Application       |
-|  Consumer      |+----->| Sidecar Proxy |+----->| Service           |
-|                |       | :8080         |       | (user-service)    |
-+----------------+       +---------------+       | 127.0.0.1:8081    |
-                                                 +-------------------+
+                                  +-----------------------------+
+                                  |    Control Plane (gRPC)     |
+                                  |           :50051            |
+                                  +--------------+--------------+
+                                                 |
+                       gRPC Registration         |  gRPC Route Streaming
+                       & Route Lookups           |  (Push Updates)
+                                                 v
++----------------+        +---------------+------+       +-------------------+
+|                |  HTTP  |               | HTTP |------>| App Instance 1    |
+|  Client /      |------->| Data Plane    |      |       | 127.0.0.1:8081    |
+|  Consumer      |        | Sidecar Proxy |      |       +-------------------+
+|                |        | :8080         | HTTP |------>| App Instance 2    |
++----------------+        |               |      |       | 127.0.0.1:8082    |
+                          | (Round-Robin) |      |       +-------------------+
+                          |               | HTTP |------>| App Instance 3    |
+                          +---------------+      |       | 127.0.0.1:8083    |
+                                                 +------>+-------------------+
 ```
 
 * **`controlplane.go`**: Implements the gRPC server (`RegisterControlPlaneServer`). Manages the central in-memory route registry, handles dynamic service registrations, and broadcasts updates to streaming subscriber channels without holding locks during channel I/O.
