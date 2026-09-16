@@ -6,7 +6,7 @@ Check out a detailed overview of each of the building blocks [here](BUILDINGBLOC
 
 ---
 
-## 🚀 Key Features & Capabilities
+## Key Features & Capabilities
 
 * **Separation of Control and Data Planes**: Clear decoupling between service discovery orchestration and network proxy execution.
 * **Sidecar Reverse Proxy**: Intercepts HTTP traffic, rewrites routing destinations using `httputil.ProxyRequest`, and injects custom telemetry headers (`Mesh-Proxy: true`).
@@ -17,7 +17,7 @@ Check out a detailed overview of each of the building blocks [here](BUILDINGBLOC
 
 ---
 
-## 🧱 Component Breakdown
+## Component Breakdown
 
 ```
                                   +-----------------------------+
@@ -47,7 +47,7 @@ Check out a detailed overview of each of the building blocks [here](BUILDINGBLOC
 
 ---
 
-## 🎬 Lifecycle & Boot Sequence (`main.go`)
+## Lifecycle & Boot Sequence (`main.go`)
 
 The driver script demonstrates end-to-end initialization in 7 steps:
 
@@ -61,7 +61,7 @@ The driver script demonstrates end-to-end initialization in 7 steps:
 
 ---
 
-## 📋 Prerequisites
+## Prerequisites
 
 * **Go**: Version 1.18 or higher installed on your machine.
 * **Protocol Buffers**: Generated Go stubs (`servicemesh/proto`) compiled using `protoc` and `protoc-gen-go-grpc`.
@@ -111,3 +111,7 @@ Content-Type: text/plain; charset=utf-8
 Hello World :P 
  from 127.0.0.1:8081
 ```
+
+## Future Work:
+
+Adding mTLS, and more comprehensive prod ready service mesh features.
